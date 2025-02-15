@@ -1,0 +1,123 @@
+<?php
+
+namespace App\Validators;
+
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
+
+class TestValidator
+{
+    /**
+     * Validate test creation data.
+     *
+     * @param array $data
+     * @throws ValidationException
+     */
+    public static function validateTestCreation(array $data)
+    {
+        $validator = Validator::make($data, [
+            'test_name' => [
+                'required',
+                'string',
+                'min:5',
+                'max:255',
+                'unique:tests,test_name',
+            ],
+            'test_type' => 'required|in:SAT 1,SAT 2,Personalized',
+            'category' => 'nullable|string|max:255',
+            'duration' => 'required|integer|min:10|max:300',
+            'is_real_sat' => 'boolean',
+            'retry_allowed' => 'boolean',
+            'max_attempts' => 'nullable|integer|min:1|max:10',
+            'created_by' => [
+                'required',
+                'exists:users,user_id',
+                function ($attribute, $value, $fail) {
+                    $role = DB::table('users')->where('user_id', $value)->value('role');
+                    if ($role !== 'admin') {
+                        $fail('Only admins can create tests.');
+                    }
+                },
+            ],
+            'language_code' => 'required|string|in:en,es,fr,de,it',
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+    }
+
+    /**
+     * Validate test updates.
+     *
+     * @param array $data
+     * @param string $testId
+     * @throws ValidationException
+     */
+    public static function validateTestUpdate(array $data, string $testId)
+    {
+        $validator = Validator::make($data, [
+            'test_name' => [
+                'sometimes',
+                'string',
+                'min:5',
+                'max:255',
+                "unique:tests,test_name,{$testId},test_id",
+            ],
+            'test_type' => 'sometimes|in:SAT 1,SAT 2,Personalized',
+            'category' => 'nullable|string|max:255',
+            'duration' => 'sometimes|integer|min:10|max:300',
+            'is_real_sat' => 'boolean',
+            'retry_allowed' => 'boolean',
+            'max_attempts' => 'nullable|integer|min:1|max:10',
+            'updated_by' => [
+                'required',
+                'exists:users,user_id',
+                function ($attribute, $value, $fail) {
+                    $role = DB::table('users')->where('user_id', $value)->value('role');
+                    if ($role !== 'admin') {
+                        $fail('Only admins can update tests.');
+                    }
+                },
+            ],
+            'language_code' => 'sometimes|string|in:en,es,fr,de,it',
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+    }
+
+    /**
+     * Validate test deletion.
+     *
+     * @param string $testId
+     * @param string $adminId
+     * @throws ValidationException
+     */
+    public static function validateTestDeletion(string $testId, string $adminId)
+    {
+        $validator = Validator::make(
+            ['test_id' => $testId, 'admin_id' => $adminId],
+            [
+                'test_id' => 'required|exists:tests,test_id',
+                'admin_id' => [
+                    'required',
+                    'exists:users,user_id',
+                    function ($attribute, $value, $fail) {
+                        $role = DB::table('users')->where('user_id', $value)->value('role');
+                        if ($role !== 'admin') {
+                            $fail('Only admins can delete tests.');
+                        }
+                    },
+                ],
+            ]
+        );
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+    }
+}

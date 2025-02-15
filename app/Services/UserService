@@ -1,0 +1,169 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
+use Exception;
+
+class UserService
+{
+    /**
+     * Register a new user with validation and hashing.
+     *
+     * @param array $data
+     * @return User
+     * @throws ValidationException
+     */
+    public function register(array $data): User
+    {
+        // Validate input data
+        $validator = Validator::make($data, [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email|max:255',
+            'password' => 'required|string|min:8|confirmed',
+            'role' => 'sometimes|in:student,teacher,admin',
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+
+        // Create user
+        return User::create([
+            'user_id' => Str::uuid(),
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'password' => Hash::make($data['password']),
+            'role' => $data['role'] ?? 'student',
+        ]);
+    }
+
+    /**
+     * Authenticate a user and return a token.
+     *
+     * @param array $credentials
+     * @return array|null
+     */
+    public function login(array $credentials): ?array
+    {
+        if (!Auth::attempt($credentials)) {
+            return null;
+        }
+
+        $user = Auth::user();
+
+        // Generate token
+        $token = $user->createToken('AuthToken')->plainTextToken;
+
+        return [
+            'user' => $user,
+            'token' => $token,
+        ];
+    }
+
+    /**
+     * Logout the authenticated user.
+     */
+    public function logout(): void
+    {
+        Auth::user()->tokens()->delete();
+    }
+
+    /**
+     * Fetch all users with optional role filtering and caching.
+     *
+     * @param string|null $role
+     * @return mixed
+     */
+    public function getUsers(?string $role = null)
+    {
+        $cacheKey = $role ? "users_role_{$role}" : 'users_all';
+
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($role) {
+            return $role ? User::where('role', $role)->get() : User::all();
+        });
+    }
+
+    /**
+     * Find a user by ID with caching.
+     *
+     * @param string $userId
+     * @return User|null
+     */
+    public function findUserById(string $userId): ?User
+    {
+        return Cache::remember("user_{$userId}", now()->addMinutes(30), function () use ($userId) {
+            return User::where('user_id', $userId)->first();
+        });
+    }
+
+    /**
+     * Update user profile with validation.
+     *
+     * @param User $user
+     * @param array $data
+     * @return User
+     * @throws ValidationException
+     */
+    public function updateProfile(User $user, array $data): User
+    {
+        $validator = Validator::make($data, [
+            'name' => 'sometimes|string|max:255',
+            'email' => "sometimes|email|unique:users,email,{$user->user_id},user_id",
+            'password' => 'sometimes|string|min:8|confirmed',
+            'profile_picture_url' => 'nullable|url|max:2083',
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+
+        if (!empty($data['password'])) {
+            $data['password'] = Hash::make($data['password']);
+        }
+
+        $user->update($data);
+
+        // Refresh cached data
+        Cache::forget("user_{$user->user_id}");
+        Cache::put("user_{$user->user_id}", $user, now()->addMinutes(30));
+
+        return $user;
+    }
+
+    /**
+     * Delete a user with soft delete.
+     *
+     * @param User $user
+     * @return bool
+     */
+    public function deleteUser(User $user): bool
+    {
+        Cache::forget("user_{$user->user_id}");
+        return $user->delete();
+    }
+
+    /**
+     * Restore a soft-deleted user.
+     *
+     * @param string $userId
+     * @return User|null
+     */
+    public function restoreUser(string $userId): ?User
+    {
+        $user = User::withTrashed()->where('user_id', $userId)->first();
+
+        if ($user) {
+            $user->restore();
+            Cache::put("user_{$user->user_id}", $user, now()->addMinutes(30));
+        }
+
+        return $user;
+    }
+}

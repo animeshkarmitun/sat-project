@@ -1,0 +1,155 @@
+<?php
+
+namespace App\Validators;
+
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Http\Request;
+use Closure;
+
+class UserValidator
+{
+    /**
+     * Validate user registration.
+     *
+     * @param array $data
+     * @throws ValidationException
+     */
+    public static function validateRegistration(array $data)
+    {
+        $validator = Validator::make($data, [
+            'username' => [
+                'required',
+                'string',
+                'min:3',
+                'max:30',
+                'regex:/^[a-zA-Z0-9_-]+$/',
+                'unique:users,username',
+            ],
+            'email' => 'required|email:rfc,dns|max:255|unique:users,email',
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/',
+                'confirmed',
+            ],
+            'first_name' => 'required|string|min:2|max:50|regex:/^[a-zA-Z\s]+$/',
+            'last_name' => 'required|string|min:2|max:50|regex:/^[a-zA-Z\s]+$/',
+            'phone_number' => [
+                'nullable',
+                'string',
+                'regex:/^\+?\d{10,15}$/',
+                function ($attribute, $value, $fail) {
+                    if (DB::table('users')->where('phone_number', $value)->exists()) {
+                        $fail('The phone number has already been taken.');
+                    }
+                }
+            ],
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+    }
+
+    /**
+     * Validate user login with rate limiting.
+     *
+     * @param array $data
+     * @param Request $request
+     * @throws ValidationException
+     */
+    public static function validateLogin(array $data, Request $request)
+    {
+        $validator = Validator::make($data, [
+            'identifier' => 'required|string|max:255',
+            'password' => 'required|string|min:8',
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+
+        // Rate Limiting to Prevent Brute Force Attacks
+        $key = 'login_attempts_' . $request->ip();
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            throw ValidationException::withMessages([
+                'identifier' => 'Too many login attempts. Please try again later.',
+            ]);
+        }
+
+        RateLimiter::hit($key, 60); // Reset after 60 seconds
+    }
+
+    /**
+     * Validate password reset request.
+     *
+     * @param array $data
+     * @throws ValidationException
+     */
+    public static function validatePasswordReset(array $data)
+    {
+        $validator = Validator::make($data, [
+            'email' => 'required|email:rfc,dns|max:255|exists:users,email',
+            'new_password' => [
+                'required',
+                'string',
+                'min:8',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/',
+                'confirmed',
+            ],
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+    }
+
+    /**
+     * Validate user profile update.
+     *
+     * @param array $data
+     * @param string $userId
+     * @throws ValidationException
+     */
+    public static function validateProfileUpdate(array $data, string $userId)
+    {
+        $validator = Validator::make($data, [
+            'username' => [
+                'required',
+                'string',
+                'min:3',
+                'max:30',
+                'regex:/^[a-zA-Z0-9_-]+$/',
+                "unique:users,username,{$userId},user_id",
+            ],
+            'email' => "required|email:rfc,dns|max:255|unique:users,email,{$userId},user_id",
+            'password' => [
+                'nullable',
+                'string',
+                'min:8',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/',
+                'confirmed',
+            ],
+            'first_name' => 'required|string|min:2|max:50|regex:/^[a-zA-Z\s]+$/',
+            'last_name' => 'required|string|min:2|max:50|regex:/^[a-zA-Z\s]+$/',
+            'phone_number' => [
+                'nullable',
+                'string',
+                'regex:/^\+?\d{10,15}$/',
+                function ($attribute, $value, $fail) use ($userId) {
+                    if (DB::table('users')->where('phone_number', $value)->where('user_id', '!=', $userId)->exists()) {
+                        $fail('The phone number has already been taken.');
+                    }
+                }
+            ],
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+    }
+}
