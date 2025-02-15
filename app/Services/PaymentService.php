@@ -141,25 +141,6 @@ class PaymentService
     }
 
     /**
-     * Validate a payment before processing.
-     *
-     * @param int $userId
-     * @param float $amount
-     * @param string $paymentMethod
-     * @throws CustomException
-     */
-    public function validatePayment(int $userId, float $amount, string $paymentMethod): void
-    {
-        if ($amount <= 0) {
-            throw new CustomException('payment.invalid_amount', [], 400);
-        }
-
-        if (!in_array($paymentMethod, ['credit_card', 'paypal', 'stripe', 'bank_transfer'])) {
-            throw new CustomException('payment.invalid_method', [], 400);
-        }
-    }
-
-    /**
      * Get a list of all failed transactions.
      *
      * @return array
@@ -170,5 +151,20 @@ class PaymentService
             ->orderBy('payment_date', 'desc')
             ->get()
             ->toArray();
+    }
+
+    /**
+     * Get payment statistics for reporting.
+     *
+     * @return array
+     */
+    public function getPaymentStats(): array
+    {
+        return [
+            'total_payments' => Payment::count(),
+            'total_revenue' => Payment::where('status', 'completed')->sum('amount'),
+            'total_failed_payments' => Payment::where('status', 'failed')->count(),
+            'total_refunded' => Payment::where('status', 'refunded')->sum('amount'),
+        ];
     }
 }
