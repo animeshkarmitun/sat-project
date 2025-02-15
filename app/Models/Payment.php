@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 class Payment extends Model
@@ -13,65 +12,117 @@ class Payment extends Model
     use HasFactory, SoftDeletes;
 
     /**
-     * Indicates that the primary key is not auto-incrementing.
+     * The table associated with the model.
+     *
+     * @var string
      */
-    public $incrementing = false;
+    protected $table = 'payments';
 
     /**
-     * Specifies the primary key type as a string (UUID).
-     */
-    protected $keyType = 'string';
-
-    /**
-     * The attributes that should be mass-assignable.
+     * The attributes that are mass assignable.
+     *
+     * @var array
      */
     protected $fillable = [
-        'payment_id', 'user_id', 'subscription_id', 'amount', 
-        'currency', 'payment_status', 'payment_method', 
-        'transaction_id', 'payment_date'
+        'user_id',
+        'subscription_id',
+        'amount',
+        'currency',
+        'payment_gateway',
+        'payment_method',
+        'transaction_id',
+        'payment_status',
+        'paid_at',
+        'refunded_at',
+        'fee_amount',
+        'net_amount',
+        'tax_amount',
+        'total_amount',
     ];
 
     /**
      * The attributes that should be cast to native types.
+     *
+     * @var array
      */
     protected $casts = [
-        'amount' => 'decimal:2',
-        'payment_date' => 'datetime',
-        'deleted_at' => 'datetime',
+        'paid_at' => 'datetime',
+        'refunded_at' => 'datetime',
+        'fee_amount' => 'float',
+        'net_amount' => 'float',
+        'tax_amount' => 'float',
+        'total_amount' => 'float',
     ];
 
     /**
-     * Boot function to generate a UUID before creating a new payment.
+     * Get the user who made the payment.
      */
-    protected static function boot()
+    public function user()
     {
-        parent::boot();
-
-        static::creating(function ($payment) {
-            if (empty($payment->payment_id)) {
-                $payment->payment_id = (string) Str::uuid();
-            }
-        });
+        return $this->belongsTo(User::class);
     }
 
     /**
-     * Scope: Retrieve payments for a specific user.
+     * Get the subscription associated with the payment.
      */
-    public function scopeByUser($query, $userId)
+    public function subscription()
     {
-        return $query->where('user_id', $userId);
+        return $this->belongsTo(Subscription::class);
     }
 
     /**
-     * Scope: Retrieve payments for a specific subscription.
+     * Check if the payment is completed.
+     *
+     * @return bool
      */
-    public function scopeBySubscription($query, $subscriptionId)
+    public function isCompleted(): bool
     {
-        return $query->where('subscription_id', $subscriptionId);
+        return $this->payment_status === 'completed';
     }
 
     /**
-     * Scope: Retrieve completed payments.
+     * Check if the payment is refunded.
+     *
+     * @return bool
+     */
+    public function isRefunded(): bool
+    {
+        return !is_null($this->refunded_at);
+    }
+
+    /**
+     * Mark the payment as refunded.
+     */
+    public function markAsRefunded(): void
+    {
+        $this->update([
+            'payment_status' => 'refunded',
+            'refunded_at' => Carbon::now(),
+        ]);
+    }
+
+    /**
+     * Calculate the net amount after deducting fees and tax.
+     */
+    public function calculateNetAmount(): void
+    {
+        $this->update([
+            'net_amount' => $this->amount - ($this->fee_amount + $this->tax_amount),
+        ]);
+    }
+
+    /**
+     * Calculate total amount including tax.
+     */
+    public function calculateTotalAmount(): void
+    {
+        $this->update([
+            'total_amount' => $this->amount + $this->tax_amount,
+        ]);
+    }
+
+    /**
+     * Scope a query to only include completed payments.
      */
     public function scopeCompleted($query)
     {
@@ -79,50 +130,10 @@ class Payment extends Model
     }
 
     /**
-     * Scope: Retrieve failed payments.
+     * Scope a query to only include refunded payments.
      */
-    public function scopeFailed($query)
+    public function scopeRefunded($query)
     {
-        return $query->where('payment_status', 'failed');
-    }
-
-    /**
-     * Scope: Retrieve payments within a date range.
-     */
-    public function scopeBetweenDates($query, $startDate, $endDate)
-    {
-        return $query->whereBetween('payment_date', [$startDate, $endDate]);
-    }
-
-    /**
-     * Relationship: A payment belongs to a user.
-     */
-    public function user()
-    {
-        return $this->belongsTo(User::class, 'user_id', 'user_id');
-    }
-
-    /**
-     * Relationship: A payment may be linked to a subscription.
-     */
-    public function subscription()
-    {
-        return $this->belongsTo(Subscription::class, 'subscription_id', 'subscription_id');
-    }
-
-    /**
-     * Check if the payment is successful.
-     */
-    public function isSuccessful()
-    {
-        return $this->payment_status === 'completed';
-    }
-
-    /**
-     * Get the formatted payment date.
-     */
-    public function getFormattedPaymentDate()
-    {
-        return Carbon::parse($this->payment_date)->format('d M Y, H:i:s');
+        return $query->whereNotNull('refunded_at');
     }
 }

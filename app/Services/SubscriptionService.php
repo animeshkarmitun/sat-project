@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\User;
 use App\Models\Subscription;
+use App\Models\User;
 use App\Exceptions\CustomException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,124 +13,134 @@ use Carbon\Carbon;
 class SubscriptionService
 {
     /**
-     * Create a new subscription for a user.
+     * Subscribe a user to a plan.
      *
-     * @param int $userId
-     * @param string $planType
-     * @param Carbon $endDate
+     * @param array $data
+     * @return Subscription
      * @throws CustomException
      */
-    public function createSubscription(int $userId, string $planType, Carbon $endDate): void
+    public function subscribeUser(array $data): Subscription
     {
-        $user = User::findOrFail($userId);
+        $this->validateSubscriptionData($data);
 
-        if (Subscription::where('user_id', $userId)->where('status', 'active')->exists()) {
-            throw new CustomException('subscription.already_active', [], 400);
-        }
-
-        DB::transaction(function () use ($userId, $planType, $endDate) {
-            Subscription::create([
-                'user_id' => $userId,
-                'plan_type' => $planType,
-                'status' => 'active',
-                'start_date' => now(),
-                'end_date' => $endDate,
-                'auto_renew' => true,
+        return DB::transaction(function () use ($data) {
+            $subscription = Subscription::create([
+                'user_id' => $data['user_id'],
+                'plan_type' => $data['plan_type'],
+                'start_date' => Carbon::now(),
+                'end_date' => Carbon::now()->addDays($this->getPlanDuration($data['plan_type'])),
+                'payment_status' => $data['payment_status'] ?? 'pending',
+                'payment_gateway' => $data['payment_gateway'] ?? null,
+                'transaction_id' => $data['transaction_id'] ?? null,
+                'auto_renew' => $data['auto_renew'] ?? false,
+                'discount_applied' => $data['discount_applied'] ?? 0,
             ]);
-        });
 
-        Cache::forget("user_subscription_{$userId}");
-        Log::info('Subscription created', ['user_id' => $userId, 'plan_type' => $planType]);
+            Log::info('User subscribed', ['user_id' => $data['user_id'], 'plan_type' => $data['plan_type']]);
+            return $subscription;
+        });
     }
 
     /**
-     * Cancel a user's subscription.
+     * Validate subscription data.
      *
-     * @param int $userId
+     * @param array $data
      * @throws CustomException
      */
-    public function cancelSubscription(int $userId): void
+    private function validateSubscriptionData(array $data): void
     {
-        $subscription = Subscription::where('user_id', $userId)->where('status', 'active')->firstOrFail();
-        
-        $subscription->update(['status' => 'canceled', 'auto_renew' => false]);
-        
-        Cache::forget("user_subscription_{$userId}");
-        Log::info('Subscription canceled', ['user_id' => $userId]);
+        if (empty($data['user_id']) || empty($data['plan_type'])) {
+            throw new CustomException('subscription.missing_required_fields', [], 400);
+        }
     }
 
     /**
-     * Check if a user has an active subscription.
+     * Get the duration of the subscription plan in days.
      *
-     * @param int $userId
-     * @return bool
+     * @param string $planType
+     * @return int
      */
-    public function hasActiveSubscription(int $userId): bool
+    private function getPlanDuration(string $planType): int
     {
-        return Cache::remember("user_subscription_{$userId}", 3600, function () use ($userId) {
-            return Subscription::where('user_id', $userId)
-                ->where('status', 'active')
-                ->where('end_date', '>', now())
-                ->exists();
-        });
+        return match ($planType) {
+            'basic' => 30,
+            'premium' => 90,
+            'annual' => 365,
+            default => 7,
+        };
     }
 
     /**
-     * Renew a user's subscription.
-     *
-     * @param int $userId
-     * @param Carbon $newEndDate
-     * @throws CustomException
-     */
-    public function renewSubscription(int $userId, Carbon $newEndDate): void
-    {
-        $subscription = Subscription::where('user_id', $userId)->where('status', 'active')->firstOrFail();
-        
-        $subscription->update(['end_date' => $newEndDate]);
-        
-        Cache::forget("user_subscription_{$userId}");
-        Log::info('Subscription renewed', ['user_id' => $userId, 'new_end_date' => $newEndDate]);
-    }
-
-    /**
-     * Get a user's subscription details.
-     *
-     * @param int $userId
-     * @return Subscription|null
-     */
-    public function getUserSubscription(int $userId): ?Subscription
-    {
-        return Cache::remember("user_subscription_{$userId}", 3600, function () use ($userId) {
-            return Subscription::where('user_id', $userId)->orderBy('start_date', 'desc')->first();
-        });
-    }
-
-    /**
-     * List all active subscriptions.
+     * Retrieve active subscriptions.
      *
      * @return array
      */
-    public function listActiveSubscriptions(): array
+    public function getActiveSubscriptions(): array
     {
-        return Subscription::where('status', 'active')
+        return Subscription::where('end_date', '>=', Carbon::now())
             ->orderBy('end_date', 'asc')
             ->get()
             ->toArray();
     }
 
     /**
-     * Auto-expire subscriptions that have reached their end date.
+     * Retrieve a user's active subscription.
+     *
+     * @param int $userId
+     * @return Subscription|null
      */
-    public function expireSubscriptions(): void
+    public function getUserActiveSubscription(int $userId): ?Subscription
     {
-        $expiredSubscriptions = Subscription::where('status', 'active')
-            ->where('end_date', '<=', now())
-            ->get();
+        return Subscription::where('user_id', $userId)
+            ->where('end_date', '>=', Carbon::now())
+            ->first();
+    }
 
-        foreach ($expiredSubscriptions as $subscription) {
-            $subscription->update(['status' => 'expired', 'auto_renew' => false]);
-            Cache::forget("user_subscription_{$subscription->user_id}");
-            Log::info('Subscription expired', ['user_id' => $subscription->user_id]);
+    /**
+     * Cancel a user subscription.
+     *
+     * @param int $subscriptionId
+     * @throws CustomException
+     */
+    public function cancelSubscription(int $subscriptionId): void
+    {
+        $subscription = Subscription::findOrFail($subscriptionId);
+        $subscription->update(['end_date' => Carbon::now()]);
+        Cache::forget("subscription_{$subscriptionId}");
+        Log::info('Subscription canceled', ['subscription_id' => $subscriptionId]);
+    }
+
+    /**
+     * Renew a subscription.
+     *
+     * @param int $subscriptionId
+     * @throws CustomException
+     */
+    public function renewSubscription(int $subscriptionId): void
+    {
+        $subscription = Subscription::findOrFail($subscriptionId);
+        if ($subscription->auto_renew) {
+            $newEndDate = Carbon::parse($subscription->end_date)->addDays($this->getPlanDuration($subscription->plan_type));
+            $subscription->update(['end_date' => $newEndDate]);
+            Cache::forget("subscription_{$subscriptionId}");
+            Log::info('Subscription renewed', ['subscription_id' => $subscriptionId, 'new_end_date' => $newEndDate]);
+        } else {
+            throw new CustomException('subscription.auto_renew_disabled', [], 400);
         }
+    }
+
+    /**
+     * Apply a discount to a subscription.
+     *
+     * @param int $subscriptionId
+     * @param float $discountAmount
+     * @throws CustomException
+     */
+    public function applyDiscount(int $subscriptionId, float $discountAmount): void
+    {
+        $subscription = Subscription::findOrFail($subscriptionId);
+        $subscription->update(['discount_applied' => $discountAmount]);
+        Cache::forget("subscription_{$subscriptionId}");
+        Log::info('Discount applied to subscription', ['subscription_id' => $subscriptionId, 'discount' => $discountAmount]);
     }
 }

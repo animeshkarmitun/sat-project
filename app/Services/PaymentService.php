@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\User;
 use App\Models\Payment;
+use App\Models\Subscription;
 use App\Exceptions\CustomException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,35 +13,76 @@ use Carbon\Carbon;
 class PaymentService
 {
     /**
-     * Process a new payment for a user.
+     * Process a payment for a subscription.
      *
-     * @param int $userId
-     * @param float $amount
-     * @param string $paymentMethod
-     * @param string|null $transactionId
+     * @param array $data
+     * @return Payment
      * @throws CustomException
      */
-    public function processPayment(int $userId, float $amount, string $paymentMethod, ?string $transactionId = null): void
+    public function processPayment(array $data): Payment
     {
-        $user = User::findOrFail($userId);
+        $this->validatePaymentData($data);
 
-        if ($amount <= 0) {
-            throw new CustomException('payment.invalid_amount', [], 400);
-        }
-
-        DB::transaction(function () use ($userId, $amount, $paymentMethod, $transactionId) {
-            Payment::create([
-                'user_id' => $userId,
-                'amount' => $amount,
-                'payment_method' => $paymentMethod,
-                'transaction_id' => $transactionId,
-                'status' => 'completed',
-                'payment_date' => now(),
+        return DB::transaction(function () use ($data) {
+            $payment = Payment::create([
+                'user_id' => $data['user_id'],
+                'subscription_id' => $data['subscription_id'],
+                'amount' => $data['amount'],
+                'payment_gateway' => $data['payment_gateway'],
+                'transaction_id' => $data['transaction_id'] ?? null,
+                'payment_status' => $data['payment_status'] ?? 'pending',
+                'paid_at' => $data['payment_status'] === 'completed' ? Carbon::now() : null,
+                'currency' => $data['currency'] ?? 'USD',
+                'payment_method' => $data['payment_method'] ?? 'credit_card',
             ]);
-        });
 
-        Cache::forget("user_payments_{$userId}");
-        Log::info('Payment processed', ['user_id' => $userId, 'amount' => $amount, 'payment_method' => $paymentMethod]);
+            if ($data['payment_status'] === 'completed') {
+                Subscription::where('id', $data['subscription_id'])->update(['payment_status' => 'completed']);
+            }
+
+            Log::info('Payment processed', ['payment_id' => $payment->id, 'user_id' => $data['user_id']]);
+            return $payment;
+        });
+    }
+
+    /**
+     * Validate payment data.
+     *
+     * @param array $data
+     * @throws CustomException
+     */
+    private function validatePaymentData(array $data): void
+    {
+        if (empty($data['user_id']) || empty($data['subscription_id']) || empty($data['amount']) || empty($data['payment_gateway'])) {
+            throw new CustomException('payment.missing_required_fields', [], 400);
+        }
+    }
+
+    /**
+     * Retrieve payment details.
+     *
+     * @param int $paymentId
+     * @return Payment|null
+     */
+    public function getPaymentDetails(int $paymentId): ?Payment
+    {
+        return Cache::remember("payment_{$paymentId}", 3600, function () use ($paymentId) {
+            return Payment::find($paymentId);
+        });
+    }
+
+    /**
+     * Retrieve all payments for a user.
+     *
+     * @param int $userId
+     * @return array
+     */
+    public function getUserPayments(int $userId): array
+    {
+        return Payment::where('user_id', $userId)
+            ->orderBy('paid_at', 'desc')
+            ->get()
+            ->toArray();
     }
 
     /**
@@ -53,118 +94,45 @@ class PaymentService
     public function refundPayment(int $paymentId): void
     {
         $payment = Payment::findOrFail($paymentId);
-
-        if ($payment->status !== 'completed') {
-            throw new CustomException('payment.not_eligible_for_refund', [], 400);
+        if ($payment->payment_status !== 'completed') {
+            throw new CustomException('payment.cannot_refund_uncompleted', [], 400);
         }
 
-        $payment->update(['status' => 'refunded']);
-        Cache::forget("user_payments_{$payment->user_id}");
+        $payment->update(['payment_status' => 'refunded']);
         Log::info('Payment refunded', ['payment_id' => $paymentId]);
     }
 
     /**
-     * Get all payments for a user.
+     * Retrieve payments filtered by status.
      *
-     * @param int $userId
+     * @param string $status
      * @return array
      */
-    public function getUserPayments(int $userId): array
+    public function getPaymentsByStatus(string $status): array
     {
-        return Cache::remember("user_payments_{$userId}", 3600, function () use ($userId) {
-            return Payment::where('user_id', $userId)
-                ->orderBy('payment_date', 'desc')
-                ->get()
-                ->toArray();
-        });
-    }
-
-    /**
-     * Generate an invoice for a payment.
-     *
-     * @param int $paymentId
-     * @return array
-     * @throws CustomException
-     */
-    public function generateInvoice(int $paymentId): array
-    {
-        $payment = Payment::findOrFail($paymentId);
-
-        return [
-            'invoice_number' => 'INV-' . strtoupper(uniqid()),
-            'user_id' => $payment->user_id,
-            'amount' => $payment->amount,
-            'payment_method' => $payment->payment_method,
-            'status' => $payment->status,
-            'payment_date' => $payment->payment_date,
-        ];
-    }
-
-    /**
-     * Get payment details by transaction ID.
-     *
-     * @param string $transactionId
-     * @return Payment|null
-     */
-    public function getPaymentByTransaction(string $transactionId): ?Payment
-    {
-        return Payment::where('transaction_id', $transactionId)->first();
-    }
-
-    /**
-     * List all transactions within a date range.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
-    public function listPaymentsByDateRange(Carbon $startDate, Carbon $endDate): array
-    {
-        return Payment::whereBetween('payment_date', [$startDate, $endDate])
-            ->orderBy('payment_date', 'desc')
+        return Payment::where('payment_status', $status)
+            ->orderBy('paid_at', 'desc')
             ->get()
             ->toArray();
     }
 
     /**
-     * Get total revenue for a given period.
+     * Retrieve total revenue from completed payments.
      *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
      * @return float
      */
-    public function getTotalRevenue(Carbon $startDate, Carbon $endDate): float
+    public function getTotalRevenue(): float
     {
-        return Payment::whereBetween('payment_date', [$startDate, $endDate])
-            ->where('status', 'completed')
-            ->sum('amount');
+        return Payment::where('payment_status', 'completed')->sum('amount');
     }
 
     /**
-     * Get a list of all failed transactions.
+     * Retrieve the number of completed payments.
      *
-     * @return array
+     * @return int
      */
-    public function getFailedPayments(): array
+    public function getTotalCompletedPayments(): int
     {
-        return Payment::where('status', 'failed')
-            ->orderBy('payment_date', 'desc')
-            ->get()
-            ->toArray();
-    }
-
-    /**
-     * Get payment statistics for reporting.
-     *
-     * @return array
-     */
-    public function getPaymentStats(): array
-    {
-        return [
-            'total_payments' => Payment::count(),
-            'total_revenue' => Payment::where('status', 'completed')->sum('amount'),
-            'total_failed_payments' => Payment::where('status', 'failed')->count(),
-            'total_refunded' => Payment::where('status', 'refunded')->sum('amount'),
-        ];
+        return Payment::where('payment_status', 'completed')->count();
     }
 }
