@@ -5,68 +5,85 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class Answer extends Model
 {
     use HasFactory, SoftDeletes;
 
     /**
-     * Indicates that the primary key is not auto-incrementing.
+     * The table associated with the model.
+     *
+     * @var string
      */
-    public $incrementing = false;
+    protected $table = 'answers';
 
     /**
-     * Specifies the primary key type as a string (UUID).
-     */
-    protected $keyType = 'string';
-
-    /**
-     * The attributes that should be mass-assignable.
+     * The attributes that are mass assignable.
+     *
+     * @var array
      */
     protected $fillable = [
-        'answer_id', 'attempt_id', 'question_id', 'student_answer',
-        'is_correct', 'time_spent', 'image_urls', 'video_urls'
+        'user_id',
+        'question_id',
+        'attempt_id',
+        'student_answer',
+        'is_correct',
+        'time_spent',
+        'image_url',
+        'video_url',
+        'score',
+        'submitted_at',
+        'reviewed_by',
+        'review_comment',
     ];
 
     /**
      * The attributes that should be cast to native types.
+     *
+     * @var array
      */
     protected $casts = [
         'is_correct' => 'boolean',
         'time_spent' => 'integer',
-        'image_urls' => 'array',
-        'video_urls' => 'array',
-        'deleted_at' => 'datetime',
+        'score' => 'float',
+        'submitted_at' => 'datetime',
     ];
 
     /**
-     * Boot function to generate a UUID before creating a new answer.
+     * Get the user who submitted the answer.
      */
-    protected static function boot()
+    public function user()
     {
-        parent::boot();
-
-        static::creating(function ($answer) {
-            if (empty($answer->answer_id)) {
-                $answer->answer_id = (string) Str::uuid();
-            }
-
-            // Trim the student's answer for consistent storage
-            $answer->student_answer = trim($answer->student_answer);
-        });
+        return $this->belongsTo(User::class);
     }
 
     /**
-     * Scope: Retrieve answers for a specific test attempt.
+     * Get the question related to this answer.
      */
-    public function scopeByAttempt($query, $attemptId)
+    public function question()
     {
-        return $query->where('attempt_id', $attemptId);
+        return $this->belongsTo(Question::class);
     }
 
     /**
-     * Scope: Retrieve only correct answers.
+     * Get the test attempt associated with the answer.
+     */
+    public function attempt()
+    {
+        return $this->belongsTo(TestAttempt::class);
+    }
+
+    /**
+     * Get the reviewer of the answer.
+     */
+    public function reviewer()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /**
+     * Scope a query to filter correct answers.
      */
     public function scopeCorrect($query)
     {
@@ -74,7 +91,7 @@ class Answer extends Model
     }
 
     /**
-     * Scope: Retrieve only incorrect answers.
+     * Scope a query to filter incorrect answers.
      */
     public function scopeIncorrect($query)
     {
@@ -82,18 +99,40 @@ class Answer extends Model
     }
 
     /**
-     * Relationship: An answer belongs to a test attempt.
+     * Scope a query to filter answers by user.
      */
-    public function attempt()
+    public function scopeByUser($query, $userId)
     {
-        return $this->belongsTo(TestAttempt::class, 'attempt_id', 'attempt_id');
+        return $query->where('user_id', $userId);
     }
 
     /**
-     * Relationship: An answer belongs to a question.
+     * Scope a query to filter answers by test attempt.
      */
-    public function question()
+    public function scopeByAttempt($query, $attemptId)
     {
-        return $this->belongsTo(Question::class, 'question_id', 'question_id');
+        return $query->where('attempt_id', $attemptId);
+    }
+
+    /**
+     * Log answer review details.
+     */
+    public function logReview(): void
+    {
+        Log::info('Answer reviewed', [
+            'answer_id' => $this->id,
+            'reviewed_by' => $this->reviewed_by,
+            'review_comment' => $this->review_comment,
+        ]);
+    }
+
+    /**
+     * Get formatted answer submission details.
+     *
+     * @return string
+     */
+    public function getFormattedSubmissionDetails(): string
+    {
+        return "Answer ID: {$this->id}, Submitted by User: {$this->user_id}, Score: {$this->score}, Submitted at: " . $this->submitted_at->format('Y-m-d H:i:s');
     }
 }

@@ -5,71 +5,100 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Str;
 
 class Question extends Model
 {
     use HasFactory, SoftDeletes;
 
     /**
-     * Indicates that the primary key is not auto-incrementing.
+     * The table associated with the model.
+     *
+     * @var string
      */
-    public $incrementing = false;
+    protected $table = 'questions';
 
     /**
-     * Specifies the primary key type as a string (UUID).
-     */
-    protected $keyType = 'string';
-
-    /**
-     * The attributes that should be mass-assignable.
+     * The attributes that are mass assignable.
+     *
+     * @var array
      */
     protected $fillable = [
-        'question_id', 'section_id', 'subject_id', 'question_text', 'question_type',
-        'options', 'correct_answer', 'difficulty', 'tags', 'explanation',
-        'version_number', 'language_code', 'images', 'videos',
-        'created_by', 'updated_by',
+        'exam_id',
+        'section_id',
+        'question_text',
+        'question_type',
+        'options',
+        'correct_answer',
+        'difficulty',
+        'tags',
+        'explanation',
+        'image_url',
+        'video_url',
+        'is_active',
+        'version',
+        'hint',
+        'time_limit',
+        'reference_material',
+        'score_weight',
+        'created_by',
+        'updated_by',
     ];
 
     /**
      * The attributes that should be cast to native types.
+     *
+     * @var array
      */
     protected $casts = [
         'options' => 'array',
         'tags' => 'array',
-        'images' => 'array',
-        'videos' => 'array',
-        'version_number' => 'integer',
-        'deleted_at' => 'datetime',
+        'is_active' => 'boolean',
+        'time_limit' => 'integer',
+        'score_weight' => 'float',
     ];
 
     /**
-     * Boot function to generate a UUID before creating a new question.
+     * Get the exam associated with the question.
      */
-    protected static function boot()
+    public function exam()
     {
-        parent::boot();
-
-        static::creating(function ($question) {
-            if (empty($question->question_id)) {
-                $question->question_id = (string) Str::uuid();
-            }
-
-            // Ensure proper formatting for question text
-            $question->question_text = ucfirst(trim($question->question_text));
-        });
+        return $this->belongsTo(Exam::class);
     }
 
     /**
-     * Scope: Retrieve only questions for a specific section.
+     * Get the section associated with the question.
      */
-    public function scopeBySection($query, $sectionId)
+    public function section()
     {
-        return $query->where('section_id', $sectionId);
+        return $this->belongsTo(Section::class);
     }
 
     /**
-     * Scope: Retrieve questions filtered by difficulty.
+     * Get the user who created the question.
+     */
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Get the user who last updated the question.
+     */
+    public function updatedBy()
+    {
+        return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    /**
+     * Scope a query to only include active questions.
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
+    }
+
+    /**
+     * Scope a query to filter by difficulty.
      */
     public function scopeDifficulty($query, $level)
     {
@@ -77,42 +106,40 @@ class Question extends Model
     }
 
     /**
-     * Scope: Retrieve questions for a specific language.
+     * Scope a query to filter by section.
      */
-    public function scopeByLanguage($query, $languageCode)
+    public function scopeBySection($query, $sectionId)
     {
-        return $query->where('language_code', $languageCode);
+        return $query->where('section_id', $sectionId);
     }
 
     /**
-     * Relationship: A question belongs to a section.
+     * Get formatted question text with hint if available.
+     *
+     * @return string
      */
-    public function section()
+    public function getFormattedQuestionText(): string
     {
-        return $this->belongsTo(Section::class, 'section_id', 'section_id');
+        return $this->hint ? $this->question_text . " (Hint: " . $this->hint . ")" : $this->question_text;
     }
 
     /**
-     * Relationship: A question belongs to a subject.
+     * Check if the question has an associated image.
+     *
+     * @return bool
      */
-    public function subject()
+    public function hasImage(): bool
     {
-        return $this->belongsTo(Subject::class, 'subject_id', 'subject_id');
+        return !empty($this->image_url);
     }
 
     /**
-     * Relationship: The admin who created the question.
+     * Check if the question has an associated video.
+     *
+     * @return bool
      */
-    public function createdBy()
+    public function hasVideo(): bool
     {
-        return $this->belongsTo(User::class, 'created_by', 'user_id');
-    }
-
-    /**
-     * Relationship: The admin who last updated the question.
-     */
-    public function updatedBy()
-    {
-        return $this->belongsTo(User::class, 'updated_by', 'user_id');
+        return !empty($this->video_url);
     }
 }
