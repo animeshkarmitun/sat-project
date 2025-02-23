@@ -2,162 +2,141 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Exam;
 use Illuminate\Http\Request;
+use App\Services\ExamService;
+use Illuminate\Support\Facades\Validator;
+use App\Exceptions\CustomException;
+use Illuminate\Support\Facades\Log;
+use App\Models\Exam;
 
 class ExamController extends Controller
 {
-    /**
-     * Display a paginated, sortable, and filterable listing of exams.
-     *
-     * Example API Requests:
-     * - Fetch All Exams (Default Sorting and Pagination):
-     *   GET /api/exams
-     * 
-     * - Fetch Only Active Exams:
-     *   GET /api/exams?is_active=true
-     * 
-     * - Fetch Exams by Category:
-     *   GET /api/exams?category=SAT 1
-     * 
-     * - Fetch Exams with Custom Sorting:
-     *   GET /api/exams?sort_by=start_time&sort_order=desc
-     * 
-     * - Fetch Active Exams in a Category:
-     *   GET /api/exams?category=SAT 1&is_active=true
-     * 
-     * - Fetch Exams with Pagination:
-     *   GET /api/exams?per_page=5
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     */
+    protected $examService;
 
-
-    public function index(Request $request)
+    public function __construct(ExamService $examService)
     {
-        // Initialize the query
-        $query = Exam::with('sections');
+        $this->examService = $examService;
+    }
 
-        // Filter by category if provided
-        if ($category = $request->query('category')) {
-            $query->byCategory($category);
+    /**
+     * Create a new exam.
+     */
+    public function createExam(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'exam_name' => 'required|string|max:255',
+            'exam_type' => 'required|in:SAT1,SAT2,Personalized',
+            'duration' => 'required|integer|min:30',
+            'max_attempts' => 'nullable|integer|min:1',
+            'created_by' => 'required|uuid|exists:users,user_id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Filter by active status if provided
-        if ($request->has('is_active')) {
-            $query->where('is_active', filter_var($request->query('is_active'), FILTER_VALIDATE_BOOLEAN));
+        try {
+            $exam = $this->examService->createExam($request->all());
+            Log::info('Exam created', ['exam_id' => $exam->exam_id, 'created_by' => $request->created_by]);
+            return response()->json(['message' => 'Exam created successfully', 'exam' => $exam], 201);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
+    }
+
+    /**
+     * Get all exams with optional filters.
+     */
+    public function getAllExams(Request $request)
+    {
+        $filters = $request->only(['exam_type', 'created_by']);
+        $exams = $this->examService->getAllExams($filters);
+        return response()->json(['exams' => $exams], 200);
+    }
+
+    /**
+     * Get details of a specific exam.
+     */
+    public function getExamDetails($examId)
+    {
+        $exam = $this->examService->getExamById($examId);
+        return response()->json(['exam' => $exam], 200);
+    }
+
+    /**
+     * Update an exam.
+     */
+    public function updateExam(Request $request, $examId)
+    {
+        $validator = Validator::make($request->all(), [
+            'exam_name' => 'sometimes|string|max:255',
+            'exam_type' => 'sometimes|in:SAT1,SAT2,Personalized',
+            'duration' => 'sometimes|integer|min:30',
+            'max_attempts' => 'sometimes|integer|min:1',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Sorting
-        $sortBy = $request->query('sort_by', 'title'); // Default to sorting by 'title'
-        $sortOrder = $request->query('sort_order', 'asc'); // Default to ascending order
-        $query->orderBy($sortBy, $sortOrder);
-
-        // Pagination
-        $perPage = $request->query('per_page', 10); // Default to 10 items per page
-        $exams = $query->paginate($perPage);
-
-        // Response
-        return response()->json([
-            'message' => 'Exams retrieved successfully.',
-            'exams' => $exams->items(), // The paginated items
-            'pagination' => [
-                'current_page' => $exams->currentPage(),
-                'per_page' => $exams->perPage(),
-                'total' => $exams->total(),
-                'last_page' => $exams->lastPage(),
-            ],
-        ]);
-    }
-
-
-
-    /**
-     * Store a newly created exam in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'duration' => 'required|integer|min:1',
-            'category' => 'nullable|string|max:255',
-            'start_time' => 'nullable|date',
-            'end_time' => 'nullable|date|after_or_equal:start_time',
-            'is_active' => 'required|boolean',
-        ]);
-
-        $exam = Exam::create($validated);
-
-        return response()->json([
-            'message' => 'Exam created successfully.',
-            'exam' => $exam,
-        ], 201);
+        try {
+            $exam = $this->examService->updateExam($examId, $request->all());
+            Log::info('Exam updated', ['exam_id' => $exam->exam_id]);
+            return response()->json(['message' => 'Exam updated successfully', 'exam' => $exam], 200);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
     }
 
     /**
-     * Display the specified exam along with its sections.
-     *
-     * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * Soft delete an exam.
      */
-    public function show($id)
+    public function deleteExam($examId)
     {
-        $exam = Exam::with('sections')->findOrFail($id);
-
-        return response()->json([
-            'message' => 'Exam retrieved successfully.',
-            'exam' => $exam,
-        ]);
+        try {
+            $this->examService->deleteExam($examId);
+            Log::info('Exam deleted', ['exam_id' => $examId]);
+            return response()->json(['message' => 'Exam deleted successfully'], 200);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
     }
 
     /**
-     * Update the specified exam in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * Restore a soft-deleted exam.
      */
-    public function update(Request $request, $id)
+    public function restoreExam($examId)
     {
-        $exam = Exam::findOrFail($id);
-
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'duration' => 'required|integer|min:1',
-            'category' => 'nullable|string|max:255',
-            'start_time' => 'nullable|date',
-            'end_time' => 'nullable|date|after_or_equal:start_time',
-            'is_active' => 'required|boolean',
-        ]);
-
-        $exam->update($validated);
-
-        return response()->json([
-            'message' => 'Exam updated successfully.',
-            'exam' => $exam,
-        ]);
+        try {
+            $exam = $this->examService->restoreExam($examId);
+            Log::info('Exam restored', ['exam_id' => $exam->exam_id]);
+            return response()->json(['message' => 'Exam restored successfully', 'exam' => $exam], 200);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
     }
 
     /**
-     * Remove the specified exam from storage.
-     *
-     * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * Duplicate an existing exam.
      */
-    public function destroy($id)
+    public function duplicateExam($examId)
     {
-        $exam = Exam::findOrFail($id);
+        try {
+            $exam = $this->examService->duplicateExam($examId);
+            Log::info('Exam duplicated', ['original_exam_id' => $examId, 'new_exam_id' => $exam->exam_id]);
+            return response()->json(['message' => 'Exam duplicated successfully', 'exam' => $exam], 201);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
+    }
 
-        $exam->delete();
-
-        return response()->json([
-            'message' => 'Exam deleted successfully.',
-        ]);
+    /**
+     * Get paginated list of exams.
+     */
+    public function getPaginatedExams(Request $request)
+    {
+        $perPage = $request->input('per_page', 10);
+        $exams = $this->examService->getPaginatedExams($perPage);
+        return response()->json(['exams' => $exams], 200);
     }
 }
