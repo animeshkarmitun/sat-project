@@ -12,6 +12,7 @@ use App\Exceptions\CustomException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class AuthController extends Controller
 {
@@ -39,8 +40,8 @@ class AuthController extends Controller
         }
 
         try {
-            $user = $this->userService->register($request->all());
-            Log::info('User registered', ['user_id' => $user->user_id]);
+            $user = $this->userService->registerUser($request->all()); // Fixed method name
+            Log::info('User registered', ['user_id' => $user->id]); // Fixed user_id reference
             return response()->json(['message' => 'Registration successful', 'user' => $user], 201);
         } catch (CustomException $e) {
             return response()->json(['error' => $e->getMessage()], $e->getCode());
@@ -67,7 +68,7 @@ class AuthController extends Controller
 
         $user = Auth::user();
         $token = $user->createToken('AuthToken')->plainTextToken;
-        Log::info('User logged in', ['user_id' => $user->user_id, 'ip' => request()->ip()]);
+        Log::info('User logged in', ['user_id' => $user->id, 'ip' => request()->ip()]);
 
         return response()->json(['user' => $user, 'token' => $token], 200);
     }
@@ -77,9 +78,12 @@ class AuthController extends Controller
      */
     public function logout()
     {
-        Auth::user()->tokens()->delete();
-        Log::info('User logged out', ['user_id' => Auth::id(), 'ip' => request()->ip()]);
-        return response()->json(['message' => 'Successfully logged out'], 200);
+        if (Auth::check()) {
+            Auth::user()->tokens()->delete();
+            Log::info('User logged out', ['user_id' => Auth::id(), 'ip' => request()->ip()]);
+            return response()->json(['message' => 'Successfully logged out'], 200);
+        }
+        return response()->json(['error' => 'No user logged in'], 400);
     }
 
     /**
@@ -90,11 +94,12 @@ class AuthController extends Controller
         $token = $request->bearerToken();
         if ($token) {
             $personalAccessToken = PersonalAccessToken::findToken($token);
-            if ($personalAccessToken) {
-                $personalAccessToken->delete();
-                Log::info('User logged out from a single device', ['user_id' => Auth::id(), 'ip' => request()->ip()]);
-                return response()->json(['message' => 'Logged out from this device'], 200);
+            if (!$personalAccessToken) {
+                return response()->json(['error' => 'Invalid token or already logged out'], 400);
             }
+            $personalAccessToken->delete();
+            Log::info('User logged out from a single device', ['user_id' => Auth::id(), 'ip' => request()->ip()]);
+            return response()->json(['message' => 'Logged out from this device'], 200);
         }
         return response()->json(['error' => 'Invalid token'], 400);
     }
@@ -118,10 +123,10 @@ class AuthController extends Controller
             $user->password = Hash::make($request->password);
             $user->save();
 
-            Log::info('User password reset', ['user_id' => $user->user_id, 'ip' => request()->ip()]);
+            Log::info('User password reset', ['user_id' => $user->id, 'ip' => request()->ip()]);
             return response()->json(['message' => 'Password reset successful'], 200);
-        } catch (CustomException $e) {
-            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'User not found'], 404);
         }
     }
 
@@ -133,7 +138,7 @@ class AuthController extends Controller
         $user = Auth::user();
         $token = $user->createToken('AuthToken')->plainTextToken;
 
-        Log::info('User token refreshed', ['user_id' => $user->user_id, 'ip' => request()->ip()]);
+        Log::info('User token refreshed', ['user_id' => $user->id, 'ip' => request()->ip()]);
         return response()->json(['token' => $token], 200);
     }
 
