@@ -2,201 +2,154 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Question;
-use App\Models\Section;
 use Illuminate\Http\Request;
+use App\Services\QuestionService;
+use Illuminate\Support\Facades\Validator;
+use App\Exceptions\CustomException;
+use Illuminate\Support\Facades\Log;
+use App\Models\Question;
 
 class QuestionController extends Controller
 {
-    /**
-     * Display a listing of questions for a specific section, with filtering, sorting, and pagination.
-     *
-     * Example API Requests:
-     * - Fetch All Questions for a Section:
-     *   GET /api/sections/{sectionId}/questions
-     * - Fetch Questions with Custom Sorting:
-     *   GET /api/sections/{sectionId}/questions?sort_by=difficulty_level&sort_order=desc
-     * - Fetch Deleted Questions (Soft Deleted):
-     *   GET /api/sections/{sectionId}/questions?only_trashed=true
-     * - Fetch Questions with Pagination:
-     *   GET /api/sections/{sectionId}/questions?per_page=5
-     *
-     * @param  int  $sectionId
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function index($sectionId, Request $request)
+    protected $questionService;
+
+    public function __construct(QuestionService $questionService)
     {
-        $section = Section::findOrFail($sectionId);
+        $this->questionService = $questionService;
+    }
 
-        // Initialize the query
-        $query = $section->questions();
+    /**
+     * Create a new question.
+     */
+    public function createQuestion(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'section_id' => 'required|uuid|exists:sections,section_id',
+            'subject_id' => 'required|uuid|exists:subjects,subject_id',
+            'question_text' => 'required|string',
+            'question_type' => 'required|in:MCQ,Grid-In',
+            'options' => 'nullable|json',
+            'correct_answer' => 'required|string|max:255',
+            'difficulty' => 'required|in:Easy,Medium,Hard',
+            'tags' => 'nullable|json',
+            'explanation' => 'nullable|string',
+            'image_urls' => 'nullable|json',
+            'video_urls' => 'nullable|json',
+            'created_by' => 'required|uuid|exists:users,user_id',
+        ]);
 
-        // Include soft deleted questions if requested
-        if ($request->query('with_trashed') === 'true') {
-            $query->withTrashed();
-        } elseif ($request->query('only_trashed') === 'true') {
-            $query->onlyTrashed();
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Filtering by question type if provided
-        if ($questionType = $request->query('question_type')) {
-            $query->where('question_type', $questionType);
+        try {
+            $question = $this->questionService->createQuestion($request->all());
+            Log::info('Question created', ['question_id' => $question->question_id, 'section_id' => $request->section_id]);
+            return response()->json(['message' => 'Question created successfully', 'question' => $question], 201);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
+    }
+
+    /**
+     * Bulk upload multiple questions.
+     */
+    public function bulkUploadQuestions(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'questions' => 'required|array|min:1',
+            'questions.*.section_id' => 'required|uuid|exists:sections,section_id',
+            'questions.*.subject_id' => 'required|uuid|exists:subjects,subject_id',
+            'questions.*.question_text' => 'required|string',
+            'questions.*.correct_answer' => 'required|string|max:255',
+            'questions.*.difficulty' => 'required|in:Easy,Medium,Hard',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Sorting
-        $sortBy = $request->query('sort_by', 'order'); // Default sorting by 'order'
-        $sortOrder = $request->query('sort_order', 'asc'); // Default to ascending order
-        $allowedSortFields = ['order', 'difficulty_level', 'question_text', 'created_at', 'updated_at'];
+        try {
+            $questions = $this->questionService->bulkUploadQuestions($request->questions);
+            Log::info('Bulk questions uploaded', ['count' => count($questions)]);
+            return response()->json(['message' => 'Questions uploaded successfully', 'questions' => $questions], 201);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
+    }
 
-        // Validate sort field
-        if (!in_array($sortBy, $allowedSortFields)) {
-            $sortBy = 'order';
+    /**
+     * Get all questions for a section with pagination and filtering.
+     */
+    public function getSectionQuestions(Request $request, $sectionId)
+    {
+        $perPage = $request->input('per_page', 10);
+        $difficulty = $request->input('difficulty');
+        
+        $questions = $this->questionService->getQuestionsBySection($sectionId, $perPage, $difficulty);
+        return response()->json(['questions' => $questions], 200);
+    }
+
+    /**
+     * Get random questions for a section.
+     */
+    public function getRandomQuestions(Request $request, $sectionId)
+    {
+        $perPage = $request->input('per_page', 10);
+        $questions = $this->questionService->getRandomQuestions($sectionId, $perPage);
+        return response()->json(['questions' => $questions], 200);
+    }
+
+    /**
+     * Get details of a specific question.
+     */
+    public function getQuestionDetails($questionId)
+    {
+        $question = $this->questionService->getQuestionById($questionId);
+        return response()->json(['question' => $question], 200);
+    }
+
+    /**
+     * Update a question.
+     */
+    public function updateQuestion(Request $request, $questionId)
+    {
+        $validator = Validator::make($request->all(), [
+            'question_text' => 'sometimes|string',
+            'question_type' => 'sometimes|in:MCQ,Grid-In',
+            'options' => 'nullable|json',
+            'correct_answer' => 'sometimes|string|max:255',
+            'difficulty' => 'sometimes|in:Easy,Medium,Hard',
+            'tags' => 'nullable|json',
+            'explanation' => 'nullable|string',
+            'image_urls' => 'nullable|json',
+            'video_urls' => 'nullable|json',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $query->orderBy($sortBy, $sortOrder);
-
-        // Pagination
-        $perPage = $request->query('per_page', 10); // Default to 10 items per page
-        $questions = $query->paginate($perPage);
-
-        return response()->json([
-            'message' => 'Questions retrieved successfully.',
-            'section' => $section,
-            'questions' => $questions->items(),
-            'pagination' => [
-                'current_page' => $questions->currentPage(),
-                'per_page' => $questions->perPage(),
-                'total' => $questions->total(),
-                'last_page' => $questions->lastPage(),
-            ],
-        ]);
+        try {
+            $question = $this->questionService->updateQuestion($questionId, $request->all());
+            Log::info('Question updated', ['question_id' => $question->question_id]);
+            return response()->json(['message' => 'Question updated successfully', 'question' => $question], 200);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
     }
 
     /**
-     * Store a newly created question for a specific section.
-     *
-     * Example API Requests:
-     * - Create a Question for a Section:
-     *   POST /api/sections/{sectionId}/questions
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $sectionId
-     * @return \Illuminate\Http\JsonResponse
+     * Delete a question.
      */
-    public function store(Request $request, $sectionId)
+    public function deleteQuestion($questionId)
     {
-        $section = Section::findOrFail($sectionId);
-
-        // Dynamic validation based on question type
-        $validated = $request->validate([
-            'question_text' => 'required|string|max:1000',
-            'question_type' => 'required|string|in:multiple-choice,true/false,short-answer', // Add other types as needed
-            'difficulty_level' => 'nullable|integer|min:1|max:5',
-            'is_active' => 'nullable|boolean',
-            'order' => 'nullable|integer',
-        ]);
-
-        $question = $section->questions()->create($validated);
-
-        return response()->json([
-            'message' => 'Question created successfully.',
-            'question' => $question,
-        ], 201);
-    }
-
-    /**
-     * Display the specified question along with its options.
-     *
-     * Example API Requests:
-     * - Fetch a Specific Question:
-     *   GET /api/questions/{questionId}
-     *
-     * @param  int  $questionId
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function show($questionId)
-    {
-        $question = Question::with('options')->withTrashed()->findOrFail($questionId);
-
-        return response()->json([
-            'message' => 'Question retrieved successfully.',
-            'question' => $question,
-        ]);
-    }
-
-    /**
-     * Update the specified question in storage.
-     *
-     * Example API Requests:
-     * - Update a Question:
-     *   PUT /api/questions/{questionId}
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $questionId
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function update(Request $request, $questionId)
-    {
-        $question = Question::withTrashed()->findOrFail($questionId);
-
-        // Dynamic validation based on question type
-        $validated = $request->validate([
-            'question_text' => 'required|string|max:1000',
-            'question_type' => 'required|string|in:multiple-choice,true/false,short-answer', // Add other types as needed
-            'difficulty_level' => 'nullable|integer|min:1|max:5',
-            'is_active' => 'nullable|boolean',
-            'order' => 'nullable|integer',
-        ]);
-
-        $question->update($validated);
-
-        return response()->json([
-            'message' => 'Question updated successfully.',
-            'question' => $question,
-        ]);
-    }
-
-    /**
-     * Remove the specified question from storage (soft delete).
-     *
-     * Example API Requests:
-     * - Delete a Question:
-     *   DELETE /api/questions/{questionId}
-     *
-     * @param  int  $questionId
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function destroy($questionId)
-    {
-        $question = Question::findOrFail($questionId);
-
-        $question->delete();
-
-        return response()->json([
-            'message' => 'Question deleted successfully.',
-        ]);
-    }
-
-    /**
-     * Restore a soft-deleted question.
-     *
-     * Example API Requests:
-     * - Restore a Question:
-     *   POST /api/questions/{questionId}/restore
-     *
-     * @param  int  $questionId
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function restore($questionId)
-    {
-        $question = Question::onlyTrashed()->findOrFail($questionId);
-
-        $question->restore();
-
-        return response()->json([
-            'message' => 'Question restored successfully.',
-            'question' => $question,
-        ]);
+        try {
+            $this->questionService->deleteQuestion($questionId);
+            Log::info('Question deleted', ['question_id' => $questionId]);
+            return response()->json(['message' => 'Question deleted successfully'], 200);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
     }
 }
