@@ -6,6 +6,7 @@ use App\Http\Controllers\SectionController;
 use App\Http\Controllers\ExamController;
 use App\Http\Controllers\QuestionController;
 use App\Http\Controllers\OptionController;
+use App\Http\Controllers\AuthController;
 
 /*
 |--------------------------------------------------------------------------
@@ -78,3 +79,17 @@ Route::prefix('options')->group(function () {
     Route::delete('{optionId}', [OptionController::class, 'destroy']); // Soft delete a specific option
     Route::post('{optionId}/restore', [OptionController::class, 'restore']); // Restore a soft-deleted option
 });
+
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/logout/device', [AuthController::class, 'logoutFromDevice']);
+    Route::post('/refresh-token', [AuthController::class, 'refreshToken']);
+    Route::post('/resend-verification', [AuthController::class, 'resendVerificationEmail']);
+    Route::get('/email-verification-status', [AuthController::class, 'checkEmailVerification']);
+});
+
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login', [AuthController::class, 'login']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+
