@@ -12,14 +12,15 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 /**
  * Class AnswerController
  *
- * Manages user answers, including submission, retrieval, and evaluation.
+ * Handles answer submissions, retrievals, and evaluations.
  *
  * API Routes:
  * - POST /answers/submit -> submitAnswer() - Stores a user's answer for a given question.
  * - GET /answers/attempt/{attemptId} -> getAnswersByAttempt() - Retrieves all answers for a given exam attempt.
  * - GET /answers/{answerId}/evaluate -> evaluateAnswer() - Evaluates a specific answer and returns feedback.
- * - DELETE /answers/{answerId} -> deleteAnswer() - Deletes a specific answer.
- * - PATCH /answers/{answerId} -> updateAnswer() - Updates an existing answer.
+ * - GET /answers/user/{userId} -> getUserAnswers() - Retrieves all answers submitted by a specific user.
+ * - GET /answers/stats/{attemptId} -> getAttemptStats() - Retrieves statistical data for a given exam attempt.
+ * - GET /answers/score/{attemptId} -> getAttemptScorePercentage() - Retrieves percentage score for a test attempt.
  */
 class AnswerController extends Controller
 {
@@ -44,7 +45,7 @@ class AnswerController extends Controller
             'attempt_id' => 'required|uuid|exists:exam_attempts,id',
             'question_id' => 'required|uuid|exists:questions,id',
             'user_id' => 'required|uuid|exists:users,id',
-            'answer' => 'required|string|max:5000',
+            'student_answer' => 'required|string|max:5000',
         ]);
 
         if ($validator->fails()) {
@@ -61,54 +62,18 @@ class AnswerController extends Controller
     }
 
     /**
-     * Retrieve answers for a given exam attempt.
-     *
-     * @param string $attemptId
-     * @return \Illuminate\Http\JsonResponse
-     *
-     * @route GET /answers/attempt/{attemptId}
-     */
-    public function getAnswersByAttempt(string $attemptId)
-    {
-        try {
-            $answers = $this->answerService->getAnswersByAttempt($attemptId);
-            return response()->json(['answers' => $answers], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['error' => 'Exam attempt not found'], 404);
-        }
-    }
-
-    /**
      * Evaluate a specific answer and return feedback.
      *
      * @param string $answerId
+     * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      *
      * @route GET /answers/{answerId}/evaluate
      */
-    public function evaluateAnswer(string $answerId)
-    {
-        try {
-            $evaluation = $this->answerService->evaluateAnswer($answerId);
-            return response()->json(['evaluation' => $evaluation], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['error' => 'Answer not found'], 404);
-        }
-    }
-
-    /**
-     * Update an existing answer.
-     *
-     * @param Request $request
-     * @param string $answerId
-     * @return \Illuminate\Http\JsonResponse
-     *
-     * @route PATCH /answers/{answerId}
-     */
-    public function updateAnswer(Request $request, string $answerId)
+    public function evaluateAnswer(Request $request, string $answerId)
     {
         $validator = Validator::make($request->all(), [
-            'answer' => 'required|string|max:5000',
+            'student_answer' => 'required|string|max:5000',
         ]);
 
         if ($validator->fails()) {
@@ -116,26 +81,8 @@ class AnswerController extends Controller
         }
 
         try {
-            $updatedAnswer = $this->answerService->updateAnswer($answerId, $request->answer);
-            return response()->json(['message' => 'Answer updated successfully', 'answer' => $updatedAnswer], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['error' => 'Answer not found'], 404);
-        }
-    }
-
-    /**
-     * Delete a specific answer.
-     *
-     * @param string $answerId
-     * @return \Illuminate\Http\JsonResponse
-     *
-     * @route DELETE /answers/{answerId}
-     */
-    public function deleteAnswer(string $answerId)
-    {
-        try {
-            $this->answerService->deleteAnswer($answerId);
-            return response()->json(['message' => 'Answer deleted successfully'], 200);
+            $evaluation = $this->answerService->evaluateAnswer($answerId, $request->student_answer);
+            return response()->json(['evaluation' => $evaluation], 200);
         } catch (ModelNotFoundException $e) {
             return response()->json(['error' => 'Answer not found'], 404);
         }
