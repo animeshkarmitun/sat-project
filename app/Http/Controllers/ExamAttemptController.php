@@ -7,7 +7,7 @@ use App\Services\ExamAttemptService;
 use Illuminate\Support\Facades\Validator;
 use App\Exceptions\CustomException;
 use Illuminate\Support\Facades\Log;
-use App\Models\ExamAttempt;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class ExamAttemptController extends Controller
 {
@@ -24,8 +24,8 @@ class ExamAttemptController extends Controller
     public function startAttempt(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'exam_id' => 'required|uuid|exists:exams,exam_id',
-            'user_id' => 'required|uuid|exists:users,user_id',
+            'exam_id' => 'required|exists:exams,id',
+            'user_id' => 'required|exists:users,id',
         ]);
 
         if ($validator->fails()) {
@@ -34,7 +34,7 @@ class ExamAttemptController extends Controller
 
         try {
             $attempt = $this->examAttemptService->startAttempt($request->all());
-            Log::info('Exam attempt started', ['attempt_id' => $attempt->attempt_id, 'exam_id' => $request->exam_id]);
+            Log::info('Exam attempt started', ['attempt_id' => $attempt->id, 'exam_id' => $request->exam_id]);
             return response()->json(['message' => 'Exam attempt started successfully', 'attempt' => $attempt], 201);
         } catch (CustomException $e) {
             return response()->json(['error' => $e->getMessage()], $e->getCode());
@@ -48,7 +48,7 @@ class ExamAttemptController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'answers' => 'required|array|min:1',
-            'answers.*.question_id' => 'required|uuid|exists:questions,question_id',
+            'answers.*.question_id' => 'required|exists:questions,id',
             'answers.*.student_answer' => 'nullable|string',
         ]);
 
@@ -72,7 +72,7 @@ class ExamAttemptController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'answers' => 'required|array|min:1',
-            'answers.*.question_id' => 'required|uuid|exists:questions,question_id',
+            'answers.*.question_id' => 'required|exists:questions,id',
             'answers.*.student_answer' => 'nullable|string',
         ]);
 
@@ -95,7 +95,7 @@ class ExamAttemptController extends Controller
     public function extendAttemptTime(Request $request, $attemptId)
     {
         $validator = Validator::make($request->all(), [
-            'extra_time' => 'required|integer|min:1', // Extra minutes to add
+            'extra_time' => 'required|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -106,6 +106,8 @@ class ExamAttemptController extends Controller
             $attempt = $this->examAttemptService->extendAttemptTime($attemptId, $request->extra_time);
             Log::info('Exam attempt time extended', ['attempt_id' => $attemptId, 'extra_time' => $request->extra_time]);
             return response()->json(['message' => 'Exam attempt time extended successfully', 'attempt' => $attempt], 200);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'Exam attempt not found'], 404);
         } catch (CustomException $e) {
             return response()->json(['error' => $e->getMessage()], $e->getCode());
         }
