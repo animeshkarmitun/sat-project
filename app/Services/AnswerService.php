@@ -14,10 +14,6 @@ class AnswerService
 {
     /**
      * Submit an answer for a question.
-     *
-     * @param array $data
-     * @return Answer
-     * @throws CustomException
      */
     public function submitAnswer(array $data): Answer
     {
@@ -43,9 +39,6 @@ class AnswerService
 
     /**
      * Validate answer submission data.
-     *
-     * @param array $data
-     * @throws CustomException
      */
     private function validateAnswerData(array $data): void
     {
@@ -56,12 +49,8 @@ class AnswerService
 
     /**
      * Evaluate the answer correctness.
-     *
-     * @param int $questionId
-     * @param string|null $studentAnswer
-     * @return bool
      */
-    private function evaluateAnswer(int $questionId, ?string $studentAnswer): bool
+    public function evaluateAnswer(int $questionId, ?string $studentAnswer): bool
     {
         $question = Question::findOrFail($questionId);
         return strtolower(trim($question->correct_answer)) === strtolower(trim($studentAnswer));
@@ -69,12 +58,8 @@ class AnswerService
 
     /**
      * Calculate the score for the answer.
-     *
-     * @param int $questionId
-     * @param string|null $studentAnswer
-     * @return float
      */
-    private function calculateScore(int $questionId, ?string $studentAnswer): float
+    public function calculateScore(int $questionId, ?string $studentAnswer): float
     {
         $question = Question::findOrFail($questionId);
         return $this->evaluateAnswer($questionId, $studentAnswer) ? $question->score_weight : 0.0;
@@ -82,9 +67,6 @@ class AnswerService
 
     /**
      * Retrieve answers for a specific user.
-     *
-     * @param int $userId
-     * @return array
      */
     public function getUserAnswers(int $userId): array
     {
@@ -98,9 +80,6 @@ class AnswerService
 
     /**
      * Retrieve answers for a specific exam attempt.
-     *
-     * @param int $attemptId
-     * @return array
      */
     public function getAnswersByAttempt(int $attemptId): array
     {
@@ -112,9 +91,6 @@ class AnswerService
 
     /**
      * Retrieve correct and incorrect answers count for a test attempt.
-     *
-     * @param int $attemptId
-     * @return array
      */
     public function getAttemptStats(int $attemptId): array
     {
@@ -128,9 +104,6 @@ class AnswerService
 
     /**
      * Get the percentage score of a test attempt.
-     *
-     * @param int $attemptId
-     * @return float
      */
     public function getAttemptScorePercentage(int $attemptId): float
     {

@@ -7,8 +7,20 @@ use App\Services\AnswerService;
 use Illuminate\Support\Facades\Validator;
 use App\Exceptions\CustomException;
 use Illuminate\Support\Facades\Log;
-use App\Models\Answer;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
+/**
+ * Class AnswerController
+ *
+ * Manages user answers, including submission, retrieval, and evaluation.
+ *
+ * API Routes:
+ * - POST /answers/submit -> submitAnswer() - Stores a user's answer for a given question.
+ * - GET /answers/attempt/{attemptId} -> getAnswersByAttempt() - Retrieves all answers for a given exam attempt.
+ * - GET /answers/{answerId}/evaluate -> evaluateAnswer() - Evaluates a specific answer and returns feedback.
+ * - DELETE /answers/{answerId} -> deleteAnswer() - Deletes a specific answer.
+ * - PATCH /answers/{answerId} -> updateAnswer() - Updates an existing answer.
+ */
 class AnswerController extends Controller
 {
     protected $answerService;
@@ -19,17 +31,20 @@ class AnswerController extends Controller
     }
 
     /**
-     * Submit an answer for a question.
+     * Submit an answer for a given question.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route POST /answers/submit
      */
     public function submitAnswer(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'attempt_id' => 'required|uuid|exists:exam_attempts,attempt_id',
-            'question_id' => 'required|uuid|exists:questions,question_id',
-            'student_answer' => 'nullable|string|max:255',
-            'time_spent' => 'nullable|integer|min:1',
-            'image_url' => 'nullable|url|max:2083',
-            'video_url' => 'nullable|url|max:2083',
+            'attempt_id' => 'required|uuid|exists:exam_attempts,id',
+            'question_id' => 'required|uuid|exists:questions,id',
+            'user_id' => 'required|uuid|exists:users,id',
+            'answer' => 'required|string|max:5000',
         ]);
 
         if ($validator->fails()) {
@@ -38,7 +53,7 @@ class AnswerController extends Controller
 
         try {
             $answer = $this->answerService->submitAnswer($request->all());
-            Log::info('Answer submitted', ['answer_id' => $answer->answer_id, 'attempt_id' => $request->attempt_id]);
+            Log::info('Answer submitted successfully', ['answer_id' => $answer->id, 'attempt_id' => $request->attempt_id, 'question_id' => $request->question_id]);
             return response()->json(['message' => 'Answer submitted successfully', 'answer' => $answer], 201);
         } catch (CustomException $e) {
             return response()->json(['error' => $e->getMessage()], $e->getCode());
@@ -46,34 +61,54 @@ class AnswerController extends Controller
     }
 
     /**
-     * Get all answers for an attempt with pagination.
+     * Retrieve answers for a given exam attempt.
+     *
+     * @param string $attemptId
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route GET /answers/attempt/{attemptId}
      */
-    public function getAttemptAnswers(Request $request, $attemptId)
+    public function getAnswersByAttempt(string $attemptId)
     {
-        $perPage = $request->input('per_page', 10);
-        $answers = $this->answerService->getAnswersByAttempt($attemptId, $perPage);
-        return response()->json(['answers' => $answers], 200);
+        try {
+            $answers = $this->answerService->getAnswersByAttempt($attemptId);
+            return response()->json(['answers' => $answers], 200);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'Exam attempt not found'], 404);
+        }
     }
 
     /**
-     * Get details of a specific answer.
+     * Evaluate a specific answer and return feedback.
+     *
+     * @param string $answerId
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route GET /answers/{answerId}/evaluate
      */
-    public function getAnswerDetails($answerId)
+    public function evaluateAnswer(string $answerId)
     {
-        $answer = $this->answerService->getAnswerById($answerId);
-        return response()->json(['answer' => $answer], 200);
+        try {
+            $evaluation = $this->answerService->evaluateAnswer($answerId);
+            return response()->json(['evaluation' => $evaluation], 200);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'Answer not found'], 404);
+        }
     }
 
     /**
-     * Update an answer (if applicable).
+     * Update an existing answer.
+     *
+     * @param Request $request
+     * @param string $answerId
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route PATCH /answers/{answerId}
      */
-    public function updateAnswer(Request $request, $answerId)
+    public function updateAnswer(Request $request, string $answerId)
     {
         $validator = Validator::make($request->all(), [
-            'student_answer' => 'nullable|string|max:255',
-            'time_spent' => 'nullable|integer|min:1',
-            'image_url' => 'nullable|url|max:2083',
-            'video_url' => 'nullable|url|max:2083',
+            'answer' => 'required|string|max:5000',
         ]);
 
         if ($validator->fails()) {
@@ -81,86 +116,28 @@ class AnswerController extends Controller
         }
 
         try {
-            $answer = $this->answerService->updateAnswer($answerId, $request->all());
-            Log::info('Answer updated', ['answer_id' => $answer->answer_id]);
-            return response()->json(['message' => 'Answer updated successfully', 'answer' => $answer], 200);
-        } catch (CustomException $e) {
-            return response()->json(['error' => $e->getMessage()], $e->getCode());
+            $updatedAnswer = $this->answerService->updateAnswer($answerId, $request->answer);
+            return response()->json(['message' => 'Answer updated successfully', 'answer' => $updatedAnswer], 200);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'Answer not found'], 404);
         }
     }
 
     /**
-     * Delete an answer (soft delete).
+     * Delete a specific answer.
+     *
+     * @param string $answerId
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route DELETE /answers/{answerId}
      */
-    public function deleteAnswer($answerId)
+    public function deleteAnswer(string $answerId)
     {
         try {
             $this->answerService->deleteAnswer($answerId);
-            Log::info('Answer deleted', ['answer_id' => $answerId]);
             return response()->json(['message' => 'Answer deleted successfully'], 200);
-        } catch (CustomException $e) {
-            return response()->json(['error' => $e->getMessage()], $e->getCode());
-        }
-    }
-
-    /**
-     * Retrieve flagged answers for review.
-     */
-    public function getFlaggedAnswers(Request $request)
-    {
-        $perPage = $request->input('per_page', 10);
-        $flaggedAnswers = $this->answerService->getFlaggedAnswers($perPage);
-        return response()->json(['flagged_answers' => $flaggedAnswers], 200);
-    }
-
-    /**
-     * Flag an answer for review.
-     */
-    public function flagAnswer($answerId)
-    {
-        try {
-            $this->answerService->flagAnswer($answerId);
-            Log::info('Answer flagged', ['answer_id' => $answerId]);
-            return response()->json(['message' => 'Answer flagged for review'], 200);
-        } catch (CustomException $e) {
-            return response()->json(['error' => $e->getMessage()], $e->getCode());
-        }
-    }
-
-    /**
-     * Unflag an answer after review.
-     */
-    public function unflagAnswer($answerId)
-    {
-        try {
-            $this->answerService->unflagAnswer($answerId);
-            Log::info('Answer unflagged', ['answer_id' => $answerId]);
-            return response()->json(['message' => 'Answer unflagged'], 200);
-        } catch (CustomException $e) {
-            return response()->json(['error' => $e->getMessage()], $e->getCode());
-        }
-    }
-
-    /**
-     * Bulk delete answers.
-     */
-    public function bulkDeleteAnswers(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'answer_ids' => 'required|array|min:1',
-            'answer_ids.*' => 'uuid|exists:answers,answer_id',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        try {
-            $this->answerService->bulkDeleteAnswers($request->answer_ids);
-            Log::info('Bulk answers deleted', ['answer_ids' => $request->answer_ids]);
-            return response()->json(['message' => 'Answers deleted successfully'], 200);
-        } catch (CustomException $e) {
-            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'Answer not found'], 404);
         }
     }
 }
