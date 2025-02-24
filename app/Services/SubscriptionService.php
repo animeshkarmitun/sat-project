@@ -1,5 +1,22 @@
 <?php
 
+/**
+ * Class SubscriptionService
+ *
+ * Manages user subscriptions, including plan selection, renewals, cancellations, and discounts.
+ *
+ * Function Descriptions:
+ * - subscribeUser(array $data) - Subscribes a user to a selected plan and processes payment details.
+ * - validateSubscriptionData(array $data) - Validates subscription request data to ensure required fields are provided.
+ * - getPlanDuration(string $planType) - Returns the duration of a subscription plan based on the plan type.
+ * - getActiveSubscriptions() - Retrieves all currently active subscriptions in the system.
+ * - getUserActiveSubscription(int $userId) - Fetches the active subscription details of a specific user.
+ * - cancelSubscription(int $subscriptionId) - Cancels a user subscription and marks it as expired.
+ * - renewSubscription(int $subscriptionId) - Renews an active subscription if auto-renewal is enabled.
+ * - applyDiscount(int $subscriptionId, float $discountAmount) - Applies a discount to an active subscription.
+ */
+
+
 namespace App\Services;
 
 use App\Models\Subscription;

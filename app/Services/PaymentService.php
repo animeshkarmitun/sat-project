@@ -1,4 +1,20 @@
 <?php
+/**
+ * Class PaymentService
+ *
+ * Handles payment processing, retrieval, refunds, and financial reporting.
+ *
+ * Function Descriptions:
+ * - processPayment(array $data) - Processes a payment for a subscription and updates the payment status.
+ * - validatePaymentData(array $data) - Validates payment request data before processing.
+ * - getPaymentDetails(int $paymentId) - Retrieves details of a specific payment transaction.
+ * - getUserPayments(int $userId) - Retrieves all payments made by a specific user.
+ * - refundPayment(int $paymentId) - Processes a refund for a completed payment.
+ * - getPaymentsByStatus(string $status) - Retrieves payments filtered by their status (e.g., pending, completed, refunded).
+ * - getTotalRevenue() - Computes the total revenue generated from completed payments.
+ * - getTotalCompletedPayments() - Counts the number of successfully completed payments.
+ */
+
 
 namespace App\Services;
 

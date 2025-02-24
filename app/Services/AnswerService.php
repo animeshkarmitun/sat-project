@@ -1,4 +1,19 @@
 <?php
+/**
+ * Class AnswerService
+ *
+ * Handles user answer submissions, retrieval, and evaluation for test attempts.
+ *
+ * Function Descriptions:
+ * - submitAnswer(array $data): Answer - Stores a user's answer for a given question with validation.
+ * - validateAnswerData(array $data): void - Ensures the necessary data fields are provided for answer submission.
+ * - evaluateAnswer(int $questionId, ?string $studentAnswer): bool - Determines if a submitted answer is correct.
+ * - calculateScore(int $questionId, ?string $studentAnswer): float - Calculates the score of a submitted answer.
+ * - getUserAnswers(int $userId): array - Retrieves all answers submitted by a specific user.
+ * - getAnswersByAttempt(int $attemptId): array - Retrieves all answers submitted for a specific test attempt.
+ * - getAttemptStats(int $attemptId): array - Retrieves the count of correct and incorrect answers for a test attempt.
+ * - getAttemptScorePercentage(int $attemptId): float - Computes the percentage score of a test attempt.
+ */
 
 namespace App\Services;
 

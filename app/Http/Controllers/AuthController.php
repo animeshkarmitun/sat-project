@@ -14,6 +14,24 @@ use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
+
+
+/**
+ * Class AuthController
+ *
+ * Handles user authentication, registration, password management, and token-based authorization.
+ *
+ * API Routes:
+ * - POST /register -> register() - Registers a new user.
+ * - POST /login -> login() - Authenticates a user and issues a token.
+ * - POST /logout -> logout() - Logs out the user and revokes all tokens.
+ * - POST /logout/device -> logoutFromDevice() - Revokes the token of the current device.
+ * - POST /password/reset -> resetPassword() - Resets user password.
+ * - POST /token/refresh -> refreshToken() - Refreshes an authentication token.
+ * - POST /email/resend -> resendVerificationEmail() - Resends email verification link.
+ * - GET /email/verify -> checkEmailVerification() - Checks if user email is verified.
+ */
+
 class AuthController extends Controller
 {
     protected $userService;

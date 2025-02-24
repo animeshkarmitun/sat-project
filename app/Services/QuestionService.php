@@ -1,5 +1,23 @@
 <?php
 
+/**
+ * Class QuestionService
+ *
+ * Manages question creation, retrieval, updates, and deletion for exams.
+ *
+ * Function Descriptions:
+ * - createQuestion(array $data) - Creates a new question with validation and database transaction handling.
+ * - validateQuestionData(array $data) - Validates question data to ensure required fields are provided.
+ * - getQuestionsByExam(int $examId) - Retrieves all questions associated with a specific exam.
+ * - getActiveQuestionsByExam(int $examId) - Retrieves only active questions for a given exam.
+ * - getQuestionById(int $questionId) - Retrieves a specific question by its ID.
+ * - updateQuestion(int $questionId, array $data) - Updates a specific question's details.
+ * - deleteQuestion(int $questionId) - Deletes a specific question and removes it from cache.
+ */
+
+
+
+
 namespace App\Services;
 
 use App\Models\Question;

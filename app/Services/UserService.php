@@ -1,4 +1,19 @@
 <?php
+/**
+ * Class UserService
+ *
+ * Provides business logic for managing user accounts, authentication, and profile operations.
+ *
+ * Function Descriptions:
+ * - validateUserData(array $data, array $rules) - Validates user data based on the given rules.
+ * - registerUser(array $data) - Registers a new user with validation and secure password hashing.
+ * - loginUser(array $data) - Authenticates a user and returns a valid authentication token.
+ * - logoutUser(bool $allSessions) - Logs out the user from the current session or all sessions.
+ * - forceDeleteUser(int $userId) - Permanently deletes a user from the database.
+ * - requestEmailChange(int $userId, string $newEmail) - Requests an email change and sends a verification token.
+ * - confirmEmailChange(int $userId, string $token) - Confirms and processes the email change request.
+ */
+
 
 namespace App\Services;
 

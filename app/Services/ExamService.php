@@ -1,4 +1,22 @@
 <?php
+/**
+ * Class ExamService
+ *
+ * Handles exam management, including creation, publication, retrieval, and filtering.
+ *
+ * Function Descriptions:
+ * - createExam(array $data) - Creates a new exam and stores it in the database.
+ * - publishExam(int $examId) - Publishes an exam, making it available for users.
+ * - getPublishedExams() - Retrieves all published exams.
+ * - validateExamData(array $data) - Validates exam data before creation.
+ * - getUpcomingExams() - Retrieves upcoming exams that have not yet started.
+ * - getPastExams() - Retrieves past exams that have already ended.
+ * - getExamsWithMultipleAttempts() - Retrieves exams that allow multiple attempts.
+ * - getActiveExams() - Retrieves active exams that are published and not expired.
+ * - getExpiredExams() - Retrieves exams that have passed their end date.
+ */
+
+
 
 namespace App\Services;
 
