@@ -9,6 +9,18 @@ use App\Exceptions\CustomException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
+/**
+ * Class ExamAttemptController
+ *
+ * Handles all operations related to exam attempts, including creation, status updates, and time extensions.
+ *
+ * API Routes:
+ * - POST /exam-attempts/start -> startAttempt() - Initiates a new exam attempt for a user.
+ * - POST /exam-attempts/{attemptId}/submit -> submitAttempt() - Marks an attempt as completed and calculates the score.
+ * - POST /exam-attempts/{attemptId}/pause -> pauseAttempt() - Pauses an in-progress attempt.
+ * - POST /exam-attempts/{attemptId}/resume -> resumeAttempt() - Resumes a previously paused attempt.
+ * - POST /exam-attempts/{attemptId}/extend-time -> extendAttemptTime() - Adds extra time to an active attempt.
+ */
 class ExamAttemptController extends Controller
 {
     protected $examAttemptService;
@@ -20,12 +32,17 @@ class ExamAttemptController extends Controller
 
     /**
      * Start a new exam attempt.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route POST /exam-attempts/start
      */
     public function startAttempt(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'exam_id' => 'required|exists:exams,id',
-            'user_id' => 'required|exists:users,id',
+            'exam_id' => 'required|uuid|exists:exams,id',
+            'user_id' => 'required|uuid|exists:users,id',
         ]);
 
         if ($validator->fails()) {
@@ -43,47 +60,60 @@ class ExamAttemptController extends Controller
 
     /**
      * Submit an ongoing exam attempt.
+     *
+     * @param Request $request
+     * @param string $attemptId
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route POST /exam-attempts/{attemptId}/submit
      */
     public function submitAttempt(Request $request, $attemptId)
     {
-        $validator = Validator::make($request->all(), [
-            'answers' => 'required|array|min:1',
-            'answers.*.question_id' => 'required|exists:questions,id',
-            'answers.*.student_answer' => 'nullable|string',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
         try {
-            $result = $this->examAttemptService->submitAttempt($attemptId, $request->answers);
-            Log::info('Exam attempt submitted', ['attempt_id' => $attemptId, 'total_answers' => count($request->answers)]);
-            return response()->json(['message' => 'Exam attempt submitted successfully', 'result' => $result], 200);
+            $this->examAttemptService->submitAttempt($attemptId);
+            return response()->json(['message' => 'Exam attempt submitted successfully'], 200);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'Exam attempt not found'], 404);
         } catch (CustomException $e) {
             return response()->json(['error' => $e->getMessage()], $e->getCode());
         }
     }
 
     /**
-     * Auto-save an ongoing exam attempt.
+     * Pause an ongoing exam attempt.
+     *
+     * @param string $attemptId
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route POST /exam-attempts/{attemptId}/pause
      */
-    public function autoSaveAttempt(Request $request, $attemptId)
+    public function pauseAttempt($attemptId)
     {
-        $validator = Validator::make($request->all(), [
-            'answers' => 'required|array|min:1',
-            'answers.*.question_id' => 'required|exists:questions,id',
-            'answers.*.student_answer' => 'nullable|string',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
         try {
-            $this->examAttemptService->autoSaveAttempt($attemptId, $request->answers);
-            Log::info('Exam attempt auto-saved', ['attempt_id' => $attemptId, 'total_answers' => count($request->answers)]);
-            return response()->json(['message' => 'Exam attempt auto-saved successfully'], 200);
+            $this->examAttemptService->pauseAttempt($attemptId);
+            return response()->json(['message' => 'Exam attempt paused successfully'], 200);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'Exam attempt not found'], 404);
+        } catch (CustomException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode());
+        }
+    }
+
+    /**
+     * Resume a paused exam attempt.
+     *
+     * @param string $attemptId
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route POST /exam-attempts/{attemptId}/resume
+     */
+    public function resumeAttempt($attemptId)
+    {
+        try {
+            $this->examAttemptService->resumeAttempt($attemptId);
+            return response()->json(['message' => 'Exam attempt resumed successfully'], 200);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'Exam attempt not found'], 404);
         } catch (CustomException $e) {
             return response()->json(['error' => $e->getMessage()], $e->getCode());
         }
@@ -91,6 +121,12 @@ class ExamAttemptController extends Controller
 
     /**
      * Extend the time limit for an ongoing exam attempt.
+     *
+     * @param Request $request
+     * @param string $attemptId
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @route POST /exam-attempts/{attemptId}/extend-time
      */
     public function extendAttemptTime(Request $request, $attemptId)
     {
@@ -103,9 +139,8 @@ class ExamAttemptController extends Controller
         }
 
         try {
-            $attempt = $this->examAttemptService->extendAttemptTime($attemptId, $request->extra_time);
-            Log::info('Exam attempt time extended', ['attempt_id' => $attemptId, 'extra_time' => $request->extra_time]);
-            return response()->json(['message' => 'Exam attempt time extended successfully', 'attempt' => $attempt], 200);
+            $this->examAttemptService->extendAttemptTime($attemptId, $request->extra_time);
+            return response()->json(['message' => 'Exam attempt time extended successfully'], 200);
         } catch (ModelNotFoundException $e) {
             return response()->json(['error' => 'Exam attempt not found'], 404);
         } catch (CustomException $e) {
